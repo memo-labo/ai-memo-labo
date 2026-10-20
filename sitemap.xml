@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://ai.memo-labo.com/</loc></url>
-  <url><loc>https://ai.memo-labo.com/notes/low-voltage-panel-grounding/</loc></url>
-  <url><loc>https://ai.memo-labo.com/notes/high-voltage-cable-shield-ground-screw/</loc></url>
-  <url><loc>https://ai.memo-labo.com/notes/ocr-induction-test/</loc></url>
-  <url><loc>https://ai.memo-labo.com/notes/gr-lbs-trip-coil/</loc></url>
-  <url><loc>https://ai.memo-labo.com/notes/power-outage-safety-check/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/dielectric-test-clamp-meter/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/dielectric-test-charging-current/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/electrical-career-position-talk/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/electrician-vs-electrical-safety/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/aerial-work-platform-apprentice/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/electrical-career-company-choice/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/ocr-alarm-contact-test/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/ocr-instantaneous-minimum-current/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/how-ai-memo-labo-is-built/</loc></url>
   <url><loc>https://ai.memo-labo.com/notes/ovgr-150-percent-test/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/relay-test-small-terminal-clip/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/power-outage-safety-check/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/gr-lbs-trip-coil/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/ocr-induction-test/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/high-voltage-cable-shield-ground-screw/</loc></url>
+  <url><loc>https://ai.memo-labo.com/notes/low-voltage-panel-grounding/</loc></url>
 </urlset>
