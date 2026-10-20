@@ -11,43 +11,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-      - name: Link field notes to canonical article pages
+      - name: Fix homepage links to existing article URLs
         run: |
           python - <<'PY'
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          notes={
-          '001':('single-withstand-clamp','単体耐圧はクランプで充電電流を見る'),
-          '002':('withstand-charging-current','耐圧前に充電電流を把握する'),
-          '003':('career-position-talk','ただのポジショントーク'),
-          '004':('electrician-vs-maintenance-culture','電工と保安、人間のタイプが違った'),
-          '005':('aerial-work-platform-first-day','いきなり高所作業車'),
-          '006':('electrical-career-company-choice','どこに所属するかで待遇が全く違う'),
-          '007':('ocr-alarm-contact-test','電流引き外しOCRの単体試験で警報接点（a1-a2）の信号が拾えない場合'),
-          '008':('ocr-instantaneous-minimum-current','OCR瞬時要素の最小動作電流試験'),
-          '009':('site-building-github-chatgpt','このサイトの作り方'),
-          '010':('ovgr-150-percent-test','OVGRの150%試験は印加電圧に注意'),
-          '011':('relay-test-small-terminal-clip','リレー試験で小さい端子を掴むクリップ'),
-          '012':('power-outage-safety-check','停電点検は「停電OK」の合図だけで切らない'),
-          '013':('gr-lbs-trip-coil','GR＋LBSのトリップコイル絶縁抵抗・抵抗値の測定'),
-          '014':('ocr-induction-test','誘導型OCRの試験上の注意'),
-          '015':('high-voltage-cable-shield-ground-screw','高圧ケーブルのシールドアースのネジはナメやすい'),
-          '016':('low-voltage-panel-grounding','低圧分電盤のアースはキュービクルから？躯体から？'),
+          fixes={
+            '/notes/single-withstand-clamp/':'/notes/dielectric-test-clamp-meter/',
+            '/notes/withstand-charging-current/':'/notes/dielectric-test-charging-current/',
+            '/notes/career-position-talk/':'/notes/electrical-career-position-talk/',
+            '/notes/electrician-vs-maintenance-culture/':'/notes/electrician-vs-electrical-safety/',
+            '/notes/aerial-work-platform-first-day/':'/notes/aerial-work-platform-apprentice/',
+            '/notes/site-building-github-chatgpt/':'/notes/how-ai-memo-labo-is-built/',
           }
-          for n,(slug,title) in notes.items():
-              url=f'/notes/{slug}/'
-              s=s.replace(f'href="#note{n}"',f'href="{url}"')
-              old=f'<article class="post" id="note{n}"><div class="meta">FIELD NOTE {n}</div><h2>{title}</h2>'
-              new=f'<article class="post" id="note{n}"><div class="meta">FIELD NOTE {n}</div><h2><a class="post-title-link" href="{url}">{title}</a></h2>'
+          for old,new in fixes.items():
               if old not in s:
-                  raise SystemExit(f'missing article pattern: {n}')
-              s=s.replace(old,new,1)
-          css='.post-title-link{color:inherit;text-decoration:none}.post-title-link:hover{text-decoration:underline;text-underline-offset:3px}'
-          s=s.replace('</style></head>',css+'</style></head>',1)
+                  raise SystemExit(f'missing expected old URL: {old}')
+              s=s.replace(old,new)
           p.write_text(s,encoding='utf-8')
           PY
       - name: Commit
@@ -56,5 +37,5 @@ jobs:
           git config user.email 'denkimemo713@gmail.com'
           git add index.html
           git diff --cached --quiet && exit 0
-          git commit -m 'Link homepage field notes to SEO article pages'
+          git commit -m 'Fix broken SEO article links'
           git push
