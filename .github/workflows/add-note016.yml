@@ -1,0 +1,54 @@
+name: Add FIELD NOTE 016
+
+on:
+  push:
+    paths:
+      - '.github/workflows/add-note016.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-note:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add note 016 to index
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('index.html')
+          s = path.read_text(encoding='utf-8')
+          if 'id="note016"' in s:
+              print('note016 already exists')
+              raise SystemExit(0)
+
+          toc_marker = '<div class="toc-group"><h3>工具・便利アイテム</h3>'
+          toc_add = '<div class="toc-group"><h3>接地・分電盤</h3><a href="#note016"><span class="num">016</span>低圧分電盤のアースはキュービクルから？躯体から？</a></div>'
+          if toc_marker not in s:
+              raise SystemExit('TOC marker not found')
+          s = s.replace(toc_marker, toc_add + toc_marker, 1)
+
+          article = '''\n<h2 class="category-title">接地・分電盤</h2>\n<article class="post" id="note016"><div class="meta">FIELD NOTE 016</div><h2>低圧分電盤のアースはキュービクルから？躯体から？</h2><p class="tags"><span class="tag">低圧分電盤</span><span class="tag">接地</span><span class="tag">キュービクル</span><span class="tag">ボンディング接地</span></p><h3>皆様のご意見</h3><p>①キュービクル側の低圧ケーブル配管からアース線も一緒に送られている</p><p>②分電盤でアース落とせばいいからわざわざキュービクル側から引っ張らない</p><p>③キュービクルA種が躯体接地を採用している場合、ある程度の箇所で集約してボンディング接地</p><h3>予想</h3><div class="point">たぶん様々な接地パターンがあるのだろう。古い建物は特に。</div></article>\n'''
+
+          about = '<section class="about"'
+          if about in s:
+              s = s.replace(about, article + about, 1)
+          elif '</main>' in s:
+              s = s.replace('</main>', article + '</main>', 1)
+          else:
+              raise SystemExit('article insertion marker not found')
+
+          path.write_text(s, encoding='utf-8')
+      - name: Commit update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "Add field note 016 about low-voltage panel grounding"
+          git push
