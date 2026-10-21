@@ -1,0 +1,65 @@
+name: Add FIELD NOTE 017 to index and sitemap
+
+on:
+  push:
+    paths:
+      - '.github/workflows/add-note017-to-index.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add note 017 to homepage and sitemap
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          url = '/notes/ocr-vcb-interlock-extension-wire/'
+          title = 'OCRとVCBの連動試験で裏に入れない場合の確認方法'
+
+          # Add to TOC under protection relay/testing.
+          toc_marker = '<div class="toc-group"><h3>保護継電器・試験</h3>'
+          toc_link = f'<a href="{url}"><span class="num">017</span>{title}</a>'
+          if toc_link not in s:
+              if toc_marker not in s:
+                  raise SystemExit('protection relay TOC marker not found')
+              s = s.replace(toc_marker, toc_marker + toc_link, 1)
+
+          # Add a homepage card at the start of the protection relay/testing section.
+          card_marker = '<h2 class="category-title">保護継電器・試験</h2>'
+          card = '''\n<article class="post" id="note017"><div class="meta">FIELD NOTE 017</div><h2><a class="post-title-link" href="/notes/ocr-vcb-interlock-extension-wire/">OCRとVCBの連動試験で裏に入れない場合の確認方法</a></h2><p class="tags"><span class="tag">OCR</span><span class="tag">VCB</span><span class="tag">連動試験</span><span class="tag">延長線</span></p><p>OCRとVCBの連動試験で盤の裏側へ入れない場合に、延長線を使ってVCB開放による回路状態の変化を確認する現場メモ。</p><div class="point"><a href="/notes/ocr-vcb-interlock-extension-wire/">FIELD NOTE 017を読む →</a></div></article>\n'''
+          if 'id="note017"' not in s:
+              if card_marker not in s:
+                  raise SystemExit('category marker not found')
+              s = s.replace(card_marker, card_marker + card, 1)
+
+          p.write_text(s, encoding='utf-8')
+
+          sm = Path('sitemap.xml')
+          x = sm.read_text(encoding='utf-8')
+          loc = 'https://ai.memo-labo.com/notes/ocr-vcb-interlock-extension-wire/'
+          if loc not in x:
+              entry = f'  <url><loc>{loc}</loc></url>\n'
+              if '</urlset>' not in x:
+                  raise SystemExit('sitemap closing tag not found')
+              x = x.replace('</urlset>', entry + '</urlset>', 1)
+              sm.write_text(x, encoding='utf-8')
+
+      - name: Commit update
+        run: |
+          git config user.name 'memo-labo'
+          git config user.email 'denkimemo713@gmail.com'
+          git add index.html sitemap.xml
+          if git diff --cached --quiet; then
+            echo 'No changes'
+            exit 0
+          fi
+          git commit -m 'Add field note 017 to homepage and sitemap'
+          git push
