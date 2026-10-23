@@ -24,52 +24,57 @@ jobs:
           test -n "$CREDENTIAL_VERSION"
           test -n "$PARTNER_TAG"
 
-      - name: Fetch OAuth token and GetItems data
+      - name: Fetch OAuth token and test GetItems
         shell: bash
         env:
           CLIENT_ID: ${{ secrets.AMAZON_CREATORS_CREDENTIAL_ID }}
           CLIENT_SECRET: ${{ secrets.AMAZON_CREATORS_SECRET }}
           CREDENTIAL_VERSION: ${{ secrets.AMAZON_CREATORS_VERSION }}
           PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
-          ASIN: B0C4TOMH2
+          ASIN: B0G38YJFPM
         run: |
           set -euo pipefail
 
-          case "$CREDENTIAL_VERSION" in
+          VERSION="$(printf '%s' "$CREDENTIAL_VERSION" | tr -d '[:space:]')"
+          case "$VERSION" in
             3.1) TOKEN_ENDPOINT="https://api.amazon.com/auth/o2/token" ;;
             3.2) TOKEN_ENDPOINT="https://api.amazon.co.uk/auth/o2/token" ;;
             3.3) TOKEN_ENDPOINT="https://api.amazon.co.jp/auth/o2/token" ;;
-            *)
-              echo "Unsupported credential version: $CREDENTIAL_VERSION"
-              exit 1
-              ;;
+            *) echo "Unsupported credential version."; exit 1 ;;
           esac
 
-          TOKEN_RESPONSE=$(curl --fail-with-body --silent --show-error \
+          TOKEN_BODY="$(mktemp)"
+          TOKEN_STATUS=$(curl --silent --show-error -o "$TOKEN_BODY" -w '%{http_code}' \
             -X POST "$TOKEN_ENDPOINT" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -nc \
-              --arg client_id "$CLIENT_ID" \
-              --arg client_secret "$CLIENT_SECRET" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg client_id "$CLIENT_ID" --arg client_secret "$CLIENT_SECRET" \
               '{grant_type:"client_credentials",client_id:$client_id,client_secret:$client_secret,scope:"creatorsapi::default"}')")
 
-          ACCESS_TOKEN=$(jq -r '.access_token // empty' <<<"$TOKEN_RESPONSE")
-          if [ -z "$ACCESS_TOKEN" ]; then
-            echo "Amazon OAuth token response did not contain an access token."
-            jq -c 'del(.access_token)' <<<"$TOKEN_RESPONSE"
+          if [ "$TOKEN_STATUS" != "200" ]; then
+            echo "Amazon OAuth failed (HTTP $TOKEN_STATUS)."
+            jq -c '{error, error_description}' "$TOKEN_BODY" 2>/dev/null || echo 'Amazon returned a non-JSON OAuth error.'
             exit 1
           fi
 
-          REQUEST_BODY=$(jq -nc \
-            --arg asin "$ASIN" \
-            --arg partner_tag "$PARTNER_TAG" \
+          ACCESS_TOKEN=$(jq -r '.access_token // empty' "$TOKEN_BODY")
+          test -n "$ACCESS_TOKEN" || { echo 'OAuth response contained no access token.'; exit 1; }
+          echo 'Amazon OAuth succeeded.'
+
+          REQUEST_BODY=$(jq -nc --arg asin "$ASIN" --arg partner_tag "$PARTNER_TAG" \
             '{itemIds:[$asin],itemIdType:"ASIN",marketplace:"www.amazon.co.jp",partnerTag:$partner_tag,resources:["images.primary.medium","itemInfo.title"]}')
 
-          RESPONSE=$(curl --fail-with-body --silent --show-error \
-            -X POST "https://creatorsapi.amazon/catalog/v1/getItems" \
+          API_BODY="$(mktemp)"
+          API_STATUS=$(curl --silent --show-error -o "$API_BODY" -w '%{http_code}' \
+            -X POST 'https://creatorsapi.amazon/catalog/v1/getItems' \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            -H "x-marketplace: www.amazon.co.jp" \
+            -H 'Content-Type: application/json' \
+            -H 'x-marketplace: www.amazon.co.jp' \
             -d "$REQUEST_BODY")
 
-          echo "$RESPONSE" | jq '{errors, items: (.itemResults.items // .itemsResult.items // []) | map({asin, detailPageURL, title: .itemInfo.title.displayValue, image: .images.primary.medium.url})}'
+          if [ "$API_STATUS" != "200" ]; then
+            echo "Creators API GetItems failed (HTTP $API_STATUS)."
+            jq -c '{errors, message, type}' "$API_BODY" 2>/dev/null || echo 'Amazon returned a non-JSON API error.'
+            exit 1
+          fi
+
+          jq '{errors, items: (.itemResults.items // .itemsResult.items // []) | map({asin, detailPageURL, title: .itemInfo.title.displayValue, image: .images.primary.medium.url})}' "$API_BODY"
