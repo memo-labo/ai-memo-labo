@@ -1,0 +1,80 @@
+name: Amazon Creators API Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      asin:
+        description: "Amazon.co.jp ASIN to test"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  get-item:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate configured secrets
+        shell: bash
+        env:
+          CLIENT_ID: ${{ secrets.AMAZON_CREATORS_CREDENTIAL_ID }}
+          CLIENT_SECRET: ${{ secrets.AMAZON_CREATORS_SECRET }}
+          CREDENTIAL_VERSION: ${{ secrets.AMAZON_CREATORS_VERSION }}
+          PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
+        run: |
+          set -euo pipefail
+          test -n "$CLIENT_ID"
+          test -n "$CLIENT_SECRET"
+          test -n "$CREDENTIAL_VERSION"
+          test -n "$PARTNER_TAG"
+
+      - name: Fetch OAuth token and GetItems data
+        shell: bash
+        env:
+          CLIENT_ID: ${{ secrets.AMAZON_CREATORS_CREDENTIAL_ID }}
+          CLIENT_SECRET: ${{ secrets.AMAZON_CREATORS_SECRET }}
+          CREDENTIAL_VERSION: ${{ secrets.AMAZON_CREATORS_VERSION }}
+          PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
+          ASIN: ${{ inputs.asin }}
+        run: |
+          set -euo pipefail
+
+          case "$CREDENTIAL_VERSION" in
+            3.1) TOKEN_ENDPOINT="https://api.amazon.com/auth/o2/token" ;;
+            3.2) TOKEN_ENDPOINT="https://api.amazon.co.uk/auth/o2/token" ;;
+            3.3) TOKEN_ENDPOINT="https://api.amazon.co.jp/auth/o2/token" ;;
+            *)
+              echo "Unsupported credential version: $CREDENTIAL_VERSION"
+              exit 1
+              ;;
+          esac
+
+          TOKEN_RESPONSE=$(curl --fail-with-body --silent --show-error \
+            -X POST "$TOKEN_ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+              --arg client_id "$CLIENT_ID" \
+              --arg client_secret "$CLIENT_SECRET" \
+              '{grant_type:"client_credentials",client_id:$client_id,client_secret:$client_secret,scope:"creatorsapi::default"}')")
+
+          ACCESS_TOKEN=$(jq -r '.access_token // empty' <<<"$TOKEN_RESPONSE")
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Amazon OAuth token response did not contain an access token."
+            jq -c 'del(.access_token)' <<<"$TOKEN_RESPONSE"
+            exit 1
+          fi
+
+          REQUEST_BODY=$(jq -nc \
+            --arg asin "$ASIN" \
+            --arg partner_tag "$PARTNER_TAG" \
+            '{itemIds:[$asin],itemIdType:"ASIN",marketplace:"www.amazon.co.jp",partnerTag:$partner_tag,resources:["images.primary.medium","itemInfo.title"]}')
+
+          RESPONSE=$(curl --fail-with-body --silent --show-error \
+            -X POST "https://creatorsapi.amazon/catalog/v1/getItems" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "x-marketplace: www.amazon.co.jp" \
+            -d "$REQUEST_BODY")
+
+          echo "$RESPONSE" | jq '{errors, items: (.itemResults.items // .itemsResult.items // []) | map({asin, detailPageURL, title: .itemInfo.title.displayValue, image: .images.primary.medium.url})}'
