@@ -2,11 +2,6 @@ name: Amazon Creators API Test
 
 on:
   workflow_dispatch:
-    inputs:
-      asin:
-        description: "Amazon.co.jp ASIN to test"
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -36,7 +31,7 @@ jobs:
           CLIENT_SECRET: ${{ secrets.AMAZON_CREATORS_SECRET }}
           CREDENTIAL_VERSION: ${{ secrets.AMAZON_CREATORS_VERSION }}
           PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
-          ASIN: ${{ inputs.asin }}
+          ASIN: B0C4TOMH2
         run: |
           set -euo pipefail
 
