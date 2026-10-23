@@ -2,6 +2,8 @@ name: Amazon Creators API Product Refresh
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '23 18 * * *'
   push:
     paths:
       - '.github/workflows/amazon-creators-api-test.yml'
@@ -9,13 +11,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: amazon-product-refresh
+  cancel-in-progress: false
+
 jobs:
   refresh-products:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Refresh Amazon product cards
+      - name: Refresh Amazon product cards on all pages
         shell: bash
         env:
           CLIENT_ID: ${{ secrets.AMAZON_CREATORS_CREDENTIAL_ID }}
@@ -37,48 +43,74 @@ jobs:
           [ "$STATUS" = 200 ] || { echo "OAuth failed HTTP $STATUS"; exit 1; }
           ACCESS_TOKEN=$(jq -r '.access_token // empty' "$TOKEN_BODY")
           test -n "$ACCESS_TOKEN"
-
-          python3 - <<'PY'
-          import glob,re,subprocess,os,json,urllib.request
-          token=os.environ['ACCESS_TOKEN'] if 'ACCESS_TOKEN' in os.environ else ''
-          PY
-
           export ACCESS_TOKEN
+
           python3 - <<'PY'
-          import glob,re,subprocess,os,json,urllib.request
+          import glob, re, subprocess, os, json, urllib.request, urllib.error, time, html
+
           token=os.environ['ACCESS_TOKEN']; tag=os.environ['PARTNER_TAG']
-          for path in glob.glob('notes/**/*.html', recursive=True):
-              text=open(path,encoding='utf-8').read()
-              urls=re.findall(r'https://link\.amazon/[A-Za-z0-9]+',text)
-              for short in dict.fromkeys(urls):
-                  p=subprocess.run(['curl','-sS','-L','-o','/dev/null','-w','%{url_effective}',short],capture_output=True,text=True,check=True)
-                  final=p.stdout.strip()
-                  m=re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?]|$)',final,re.I)
-                  if not m:
-                      print('Could not resolve ASIN for',short); continue
-                  asin=m.group(1).upper()
-                  body=json.dumps({'itemIds':[asin],'itemIdType':'ASIN','marketplace':'www.amazon.co.jp','partnerTag':tag,'resources':['images.primary.medium','itemInfo.title']}).encode()
+          cache={}
+
+          def resolve(short):
+              p=subprocess.run(['curl','-sS','-L','--retry','3','--retry-delay','2','-o','/dev/null','-w','%{url_effective}',short],capture_output=True,text=True,check=True)
+              final=p.stdout.strip()
+              m=re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?]|$)',final,re.I)
+              return m.group(1).upper() if m else None
+
+          def get_item(asin):
+              if asin in cache: return cache[asin]
+              body=json.dumps({'itemIds':[asin],'itemIdType':'ASIN','marketplace':'www.amazon.co.jp','partnerTag':tag,'resources':['images.primary.medium','itemInfo.title']}).encode()
+              for attempt in range(6):
                   req=urllib.request.Request('https://creatorsapi.amazon/catalog/v1/getItems',data=body,headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','x-marketplace':'www.amazon.co.jp'},method='POST')
-                  with urllib.request.urlopen(req) as r: data=json.load(r)
-                  items=(data.get('itemResults') or data.get('itemsResult') or {}).get('items',[])
-                  if not items: print('No item for',asin); continue
-                  item=items[0]
+                  try:
+                      with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
+                      items=(data.get('itemResults') or data.get('itemsResult') or {}).get('items',[])
+                      item=items[0] if items else None
+                      cache[asin]=item
+                      time.sleep(2)
+                      return item
+                  except urllib.error.HTTPError as e:
+                      if e.code == 429 and attempt < 5:
+                          wait=min(60,5*(2**attempt)); print(f'Rate limited for {asin}; waiting {wait}s'); time.sleep(wait); continue
+                      print(f'Creators API HTTP {e.code} for {asin}; skipping without stopping all pages')
+                      cache[asin]=None; return None
+                  except Exception as e:
+                      if attempt < 2: time.sleep(5); continue
+                      print(f'Creators API request failed for {asin}: {type(e).__name__}; skipping')
+                      cache[asin]=None; return None
+
+          files=glob.glob('**/*.html',recursive=True)
+          print(f'Scanning {len(files)} HTML pages')
+          for path in files:
+              text=open(path,encoding='utf-8').read(); original=text
+              urls=list(dict.fromkeys(re.findall(r'https://link\.amazon/[A-Za-z0-9]+',text)))
+              for short in urls:
+                  asin=resolve(short)
+                  if not asin:
+                      print('Could not resolve ASIN for',short,'in',path); continue
+                  item=get_item(asin)
+                  if not item: continue
                   title=item.get('itemInfo',{}).get('title',{}).get('displayValue','Amazon商品')
                   image=item.get('images',{}).get('primary',{}).get('medium',{}).get('url','')
-                  if not image: print('No image for',asin); continue
-                  esc=lambda s:s.replace('&','&amp;').replace('"','&quot;').replace('<','&lt;').replace('>','&gt;')
-                  card=f'<div class="amazon-api-product"><a href="{short}" target="_blank" rel="nofollow sponsored noopener"><img src="{image}" alt="{esc(title)}" loading="lazy"></a><div><strong>{esc(title)}</strong><br><a href="{short}" target="_blank" rel="nofollow sponsored noopener">Amazonで見る</a></div></div>'
-                  # Upgrade simple product boxes containing this short link; leave already upgraded cards alone.
-                  if 'amazon-api-product' not in text or short not in re.findall(r'<div class="amazon-api-product">.*?</div></div>',text,re.S):
-                      pattern=r'<div class="product">(?:(?!</div>).)*?href="'+re.escape(short)+r'"(?:(?!</div>).)*?</div>'
-                      text,n=re.subn(pattern,card,text,count=1,flags=re.S)
-                      if n==0 and short in text and image not in text:
-                          # Add image immediately before the existing Amazon link when markup differs.
-                          text=text.replace(f'<a href="{short}"',f'<img class="amazon-api-image" src="{image}" alt="{esc(title)}" loading="lazy"><br><a href="{short}"',1)
-                  style='.amazon-api-product{display:flex;gap:18px;align-items:center;background:#fff8e8;border:1px solid #ead8a7;border-radius:12px;padding:16px;margin:20px 0}.amazon-api-product img,.amazon-api-image{width:160px;max-width:42%;height:auto;border-radius:8px;background:#fff}'
+                  if not image: continue
+                  safe=html.escape(title,quote=True)
+                  card=f'<div class="amazon-api-product" data-amazon-link="{short}"><p>{safe}</p><a href="{short}" target="_blank" rel="nofollow sponsored noopener"><img src="{image}" alt="{safe}" loading="lazy"></a><p><a class="amazon-api-button" href="{short}" target="_blank" rel="nofollow sponsored noopener">Amazonで見る</a></p></div>'
+                  # Refresh cards created by this automation.
+                  marker=r'<div class="amazon-api-product" data-amazon-link="'+re.escape(short)+r'">.*?</div>'
+                  text,n=re.subn(marker,card,text,count=1,flags=re.S)
+                  if n==0:
+                      # Upgrade legacy product boxes.
+                      legacy=r'<div class="product">(?:(?!</div>).)*?href="'+re.escape(short)+r'"(?:(?!</div>).)*?</div>'
+                      text,n=re.subn(legacy,card,text,count=1,flags=re.S)
+                  if n==0 and image not in text:
+                      # Preserve editorial copy; insert API image before the existing Amazon link.
+                      text=text.replace(f'<a href="{short}"',f'<img class="amazon-api-image" src="{image}" alt="{safe}" loading="lazy"><br><a href="{short}"',1)
+              if urls:
+                  style='.amazon-api-product{background:#fff8e8;border:1px solid #ead8a7;border-radius:12px;padding:16px;margin:20px 0}.amazon-api-product img,.amazon-api-image{display:block;width:180px;max-width:100%;height:auto;margin:12px 0;border-radius:8px;background:#fff}.amazon-api-button{display:inline-block;font-weight:800}.amazon-api-product p{margin:.5em 0}'
                   if '.amazon-api-product{' not in text:
                       text=text.replace('</style>',style+'</style>',1)
-              open(path,'w',encoding='utf-8').write(text)
+              if text != original:
+                  open(path,'w',encoding='utf-8').write(text); print('Updated',path)
           PY
 
       - name: Commit refreshed product cards
@@ -88,6 +120,6 @@ jobs:
           if git diff --quiet; then echo 'No product card changes.'; exit 0; fi
           git config user.name 'memo-labo'
           git config user.email 'denkimemo713@gmail.com'
-          git add notes
+          git add '*.html' '**/*.html'
           git commit -m 'Refresh Amazon product cards via Creators API'
           git push
