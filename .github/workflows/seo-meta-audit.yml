@@ -1,0 +1,65 @@
+name: Sitewide SEO Metadata
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/seo-meta-audit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  seo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Normalize SEO metadata across all HTML pages
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob,re,html,os
+          base='https://ai.memo-labo.com'
+          for path in glob.glob('**/*.html',recursive=True):
+              if path.startswith('_shared/'):
+                  continue
+              s=open(path,encoding='utf-8').read(); old=s
+              titlem=re.search(r'<title>(.*?)</title>',s,re.I|re.S)
+              h1m=re.search(r'<h1[^>]*>(.*?)</h1>',s,re.I|re.S)
+              raw=(titlem.group(1) if titlem else (h1m.group(1) if h1m else 'AI memo labo'))
+              title=html.unescape(re.sub('<[^>]+>','',raw)).strip()
+              if path=='index.html': url=base+'/'
+              elif path.endswith('/index.html'): url=base+'/'+path[:-10]
+              else: url=base+'/'+path
+              # Keep hand-written descriptions; add a useful fallback only when absent.
+              if not re.search(r'<meta\s+name=["\']description["\']',s,re.I):
+                  text=re.sub(r'<(script|style)[^>]*>.*?</\1>',' ',s,flags=re.I|re.S)
+                  text=re.sub('<[^>]+>',' ',text); text=html.unescape(re.sub(r'\s+',' ',text)).strip()
+                  desc=(text[:115]+'…') if len(text)>116 else text
+                  meta=f'<meta name="description" content="{html.escape(desc,quote=True)}">'
+                  s=s.replace('</title>','</title>'+meta,1) if '</title>' in s else s.replace('</head>',meta+'</head>',1)
+              if not re.search(r'<link\s+rel=["\']canonical["\']',s,re.I):
+                  s=s.replace('</head>',f'<link rel="canonical" href="{url}"></head>',1)
+              if not re.search(r'<meta\s+property=["\']og:title["\']',s,re.I):
+                  s=s.replace('</head>',f'<meta property="og:title" content="{html.escape(title,quote=True)}"></head>',1)
+              if not re.search(r'<meta\s+property=["\']og:url["\']',s,re.I):
+                  s=s.replace('</head>',f'<meta property="og:url" content="{url}"></head>',1)
+              if not re.search(r'<meta\s+property=["\']og:type["\']',s,re.I):
+                  typ='website' if path=='index.html' else 'article'
+                  s=s.replace('</head>',f'<meta property="og:type" content="{typ}"></head>',1)
+              if not re.search(r'<meta\s+name=["\']twitter:card["\']',s,re.I):
+                  s=s.replace('</head>','<meta name="twitter:card" content="summary_large_image"></head>',1)
+              if path!='index.html' and not re.search(r'<script[^>]+application/ld\+json',s,re.I):
+                  data='{"@context":"https://schema.org","@type":"Article","headline":'+__import__('json').dumps(title,ensure_ascii=False)+',"mainEntityOfPage":'+__import__('json').dumps(url)+' ,"inLanguage":"ja"}'
+                  s=s.replace('</head>',f'<script type="application/ld+json">{data}</script></head>',1)
+              if s!=old:
+                  open(path,'w',encoding='utf-8').write(s); print('SEO updated:',path)
+          PY
+      - name: Commit SEO updates
+        run: |
+          if git diff --quiet; then echo 'No SEO changes.'; exit 0; fi
+          git config user.name 'memo-labo'
+          git config user.email 'denkimemo713@gmail.com'
+          git add '*.html' '**/*.html'
+          git commit -m 'Improve sitewide SEO metadata'
+          git push
