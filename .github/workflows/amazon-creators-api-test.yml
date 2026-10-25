@@ -1,5 +1,6 @@
 name: Amazon Creators API Product Refresh
 
+# Manual refresh trigger: 2026-10-25
 on:
   workflow_dispatch:
   schedule:
@@ -95,15 +96,12 @@ jobs:
                   if not image: continue
                   safe=html.escape(title,quote=True)
                   card=f'<div class="amazon-api-product" data-amazon-link="{short}"><p>{safe}</p><a href="{short}" target="_blank" rel="nofollow sponsored noopener"><img src="{image}" alt="{safe}" loading="lazy"></a><p><a class="amazon-api-button" href="{short}" target="_blank" rel="nofollow sponsored noopener">Amazonで見る</a></p></div>'
-                  # Refresh cards created by this automation.
                   marker=r'<div class="amazon-api-product" data-amazon-link="'+re.escape(short)+r'">.*?</div>'
                   text,n=re.subn(marker,card,text,count=1,flags=re.S)
                   if n==0:
-                      # Upgrade legacy product boxes.
                       legacy=r'<div class="product">(?:(?!</div>).)*?href="'+re.escape(short)+r'"(?:(?!</div>).)*?</div>'
                       text,n=re.subn(legacy,card,text,count=1,flags=re.S)
                   if n==0 and image not in text:
-                      # Preserve editorial copy; insert API image before the existing Amazon link.
                       text=text.replace(f'<a href="{short}"',f'<img class="amazon-api-image" src="{image}" alt="{safe}" loading="lazy"><br><a href="{short}"',1)
               if urls:
                   style='.amazon-api-product{background:#fff8e8;border:1px solid #ead8a7;border-radius:12px;padding:16px;margin:20px 0}.amazon-api-product img,.amazon-api-image{display:block;width:180px;max-width:100%;height:auto;margin:12px 0;border-radius:8px;background:#fff}.amazon-api-button{display:inline-block;font-weight:800}.amazon-api-product p{margin:.5em 0}'
