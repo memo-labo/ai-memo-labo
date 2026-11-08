@@ -1,10 +1,11 @@
-name: Sync shared AdSense snippet
+name: Sync shared ads across all articles
 
 on:
   push:
     branches: [main]
     paths:
       - '_shared/adsense.html'
+      - '_shared/amazon-random.js'
       - 'index.html'
       - 'notes/**/index.html'
       - '.github/workflows/sync-adsense.yml'
@@ -18,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Sync AdSense into every HTML head
+      - name: Sync AdSense and Amazon ads into all articles
         shell: python
         run: |
           from pathlib import Path
@@ -39,6 +40,13 @@ jobs:
                   if '</head>' not in text:
                       raise SystemExit(f'missing </head>: {page}')
                   updated = text.replace('</head>', snippet + '\n</head>', 1)
+              # Every existing and future article loads the same random Amazon ad script.
+              if page.parts[0] == 'notes':
+                  amazon_tag = '<script defer src="/_shared/amazon-random.js"></script>'
+                  if amazon_tag not in updated:
+                      if '</body>' not in updated:
+                          raise SystemExit(f'missing </body>: {page}')
+                      updated = updated.replace('</body>', amazon_tag + '</body>', 1)
               if updated != text:
                   page.write_text(updated, encoding='utf-8')
                   changed.append(str(page))
@@ -48,11 +56,11 @@ jobs:
       - name: Commit synchronized pages
         run: |
           if git diff --quiet; then
-            echo 'AdSense already synchronized'
+            echo 'Shared ads already synchronized'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html notes
-          git commit -m 'Sync shared AdSense snippet'
+          git commit -m 'Sync shared AdSense and Amazon ads'
           git push
