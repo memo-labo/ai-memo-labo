@@ -6,6 +6,7 @@ on:
     paths:
       - '_shared/adsense.html'
       - '_shared/amazon-random.js'
+      - 'amazon-random.js'
       - 'index.html'
       - 'notes/**/index.html'
       - '.github/workflows/sync-adsense.yml'
@@ -42,7 +43,8 @@ jobs:
                   updated = text.replace('</head>', snippet + '\n</head>', 1)
               # Every existing and future article loads the same random Amazon ad script.
               if page.parts[0] == 'notes':
-                  amazon_tag = '<script defer src="/_shared/amazon-random.js"></script>'
+                  amazon_tag = '<script defer src="/amazon-random.js"></script>'
+                  updated = updated.replace('<script defer src="/_shared/amazon-random.js"></script>', amazon_tag)
                   if amazon_tag not in updated:
                       if '</body>' not in updated:
                           raise SystemExit(f'missing </body>: {page}')
